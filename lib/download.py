@@ -43,23 +43,30 @@ def download(source):
         json.dump({'templates': templates}, f, indent=2, sort_keys=False)
     return True
 
-# Create destination folder if not yet present
-if not os.path.exists(destination_dir):
-  os.makedirs(destination_dir)
+def main():
+  banner('Download', 'Fetch template sources listed in sources.csv')
+  sources = sources_list.load()
+  os.makedirs(destination_dir, exist_ok=True)
 
-banner('Download', 'Fetch template sources listed in sources.csv')
+  # Each run must only use downloads from this run, not a stale previous build.
+  # Leave non-JSON files and the separate sources/local directory untouched.
+  for name in os.listdir(destination_dir):
+    path = os.path.join(destination_dir, name)
+    if name.endswith('.json') and (os.path.isfile(path) or os.path.islink(path)):
+      os.unlink(path)
 
-sources = sources_list.load()
-failures = [source for source in sources if not download(source)]
+  failures = [source for source in sources if not download(source)]
+  log.info(f'Downloaded {len(sources) - len(failures)}/{len(sources)} sources')
 
-log.info(f'Downloaded {len(sources) - len(failures)}/{len(sources)} sources')
+  # A lost collection stops the build; a lost app source only costs its own app
+  failed_apps = [source.name for source in failures if source.is_app]
+  failed_collections = [source.name for source in failures if not source.is_app]
+  if failed_apps:
+    log.warning(f'Leaving out {len(failed_apps)} unavailable app '
+                f'sources: {", ".join(failed_apps)}')
+  if failed_collections:
+    log.error(f'Failed to download valid sources: {", ".join(failed_collections)}')
+    sys.exit(1)
 
-# A lost collection stops the build; a lost app source only costs its own app
-failed_apps = [source.name for source in failures if source.is_app]
-failed_collections = [source.name for source in failures if not source.is_app]
-if failed_apps:
-  log.warning(f'Leaving out {len(failed_apps)} unavailable app '
-              f'sources: {", ".join(failed_apps)}')
-if failed_collections:
-  log.error(f'Failed to download valid sources: {", ".join(failed_collections)}')
-  sys.exit(1)
+if __name__ == '__main__':
+  main()
